@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="static/styles.css" />
+    <link rel="stylesheet" href="static/auto-complete.css" />
+    <script src="static/auto-complete.min.js"></script>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+
+    <style>
+
+        body, html {
+            height: 100%;
+            font-family: "Trebuchet MS", Arial, Helvetica, sans-serif;
+            border-collapse: collapse;
+        }
+
+        .hero-image {
+            background-image: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), url("static/movie-collage.jpg");
+            height: 20%;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-size: cover;
+            position: relative;
+        }
+
+        .hero-text {
+            text-align: center;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            font-size: xx-large;
+            transform: translate(-50%, -50%);
+            color: white;
+        }
+
+        #loading-img {
+            background: url(static/loading.gif) center center no-repeat;
+            height: 100%;
+            z-index: 20;
+        }
+
+        .overlay {
+            background: #e9e9e9;
+            display: none;
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+  <body>
+    <div class="hero-image">
+  <div class="hero-text">
+    <h1>Tropefy</h1>
+  </div>
+  <br/>
+</div>
+    <input type="text" id="userinput" />
+    <input type="button" id="generate" value="Generate Recommendations" style="
+    background-color: #4caf50;
+    color: #f2f2f2;
+"/>
+    <div id="idOverlay" class="overlay">
+    <div id="loading-img"></div>
+</div>
+    <div class="parent">
+      <table id="movies" class="child" style="width: 300px"></table>
+      <table id="tropes" class="child" style="width: 300px"></table>
+      <table id="recommendations" class="child" style="width: 300px"></table>
+    </div>
+    <div><p id="information"></p></div>
+    <script>
+      var choices = getListOfMovies();
+      var movies = [];
+      var tropes = [];
+      var recommendations = [];
+      var movie_trope_links = [];
+      var trope_recommendation_links = [];
+
+      function getMovie(MovieId) {
+        for (let i = 0; i < choices.length; i++) {
+          if (choices[i].MovieId == MovieId) return choices[i];
+        }
+        return { MovieId: "99999", overview: "N/A", Title: "N/A" };
+      }
+      var autocomplete = new autoComplete({
+        selector: "#userinput",
+        minChars: 1,
+        source: function(term, suggest) {
+          term = term.toLowerCase();
+          var suggestions = [];
+          for (i = 0; i < choices.length; i++)
+            if (~choices[i].Title.toLowerCase().indexOf(term))
+              suggestions.push(choices[i]);
+          suggest(suggestions);
+        },
+        renderItem: function(item, search) {
+          var re = new RegExp("(" + search.split(" ").join("|") + ")", "gi");
+          return (
+            '<div class="autocomplete-suggestion" MovieId=' +
+            item.MovieId +
+            ' data-val="' +
+            item.Title +
+            '">' +
+            item.Title.replace(re, "<b>$1</b>") +
+            "</div>"
+          );
+        },
+        onSelect: function(e, term, item) {
+          console.log(e);
+          console.log(term);
+          movies.push(getMovie(item.getAttribute("MovieId")));
+          updateLoop(
+            movies,
+            tropes,
+            recommendations,
+            movie_trope_links,
+            trope_recommendation_links
+          );
+        }
+      });
+
+      function clearLines() {
+        document.querySelectorAll(".line").forEach(line => {
+          line.parentNode.removeChild(line);
+        });
+      }
+      function drawlines(sourceType, destinationType, links) {
+        links.forEach(link => {
+          var leftid = sourceType + "-" + link.Source;
+          var rightid = destinationType + "-" + link.Destination;
+          drawline(leftid, rightid, link.Strength);
+        });
+      }
+      function drawline(id1, id2, strength) {
+        elem1 = document.getElementById(id1).getBoundingClientRect();
+        elem2 = document.getElementById(id2).getBoundingClientRect();
+        rightCoords = getRightPoint(elem1);
+        leftCoords = getLeftPoint(elem2);
+        var line = document.createElement("div");
+        line.className = "line";
+        var dist = distance(rightCoords, leftCoords);
+        var ang = angle(rightCoords, leftCoords);
+        line.style.width = dist + "px";
+        line.style.top = rightCoords.y + "px";
+        line.style.left = rightCoords.x + "px";
+        line.style.borderTop = "solid " + strength / 10 + "px blue";
+        line.style.transform = "rotate(" + Math.round(ang) + "deg)";
+        document.getElementsByTagName("BODY")[0].append(line);
+        // console.log(line);
+      }
+      function getRightPoint(coords) {
+        x = coords.right;
+        y = coords.top + coords.height / 2;
+        return { x, y };
+      }
+      function getLeftPoint(coords) {
+        x = coords.left;
+        y = coords.top + coords.height / 2;
+        return { x, y };
+      }
+      function distance(rightCoords, leftCoords) {
+        return Math.sqrt(
+          Math.pow(rightCoords.x - leftCoords.x, 2) +
+            Math.pow(rightCoords.y - leftCoords.y, 2)
+        );
+      }
+      function angle(rightCoords, leftCoords) {
+        (dx = rightCoords.x - leftCoords.x),
+          (dy = rightCoords.y - leftCoords.y);
+        return ((Math.PI + Math.atan2(dy, dx)) * 180) / Math.PI;
+      }
+
+      function updateLoop(
+        movies,
+        tropes,
+        recommendations,
+        movie_trope_links,
+        trope_recommendation_links
+      ) {
+        var moviesElem = document.getElementById("movies");
+        var tropesElem = document.getElementById("tropes");
+        var recommendationElem = document.getElementById("recommendations");
+        console.log(trope_recommendation_links);
+        document.querySelectorAll(".line").forEach(line => {
+          line.parentNode.removeChild(line);
+        });
+        moviesElem.innerHTML = "";
+        let container = document.createElement("tr");
+        let row = document.createElement("th");
+        row.innerHTML = "Movies";
+        moviesElem.append(row);
+        // if (movies.length > 0)
+        movies.forEach((mov, i) => {
+          let new_movie = movieText(mov, "movie-" + (i + 1), i + 1);
+          new_movie.onmouseenter = movieHover.bind(null, i + 1);
+          new_movie.onmouseleave = exitHover;
+          moviesElem.append(new_movie);
+        });
+        // else {
+        //   defaultMovies.forEach((mov, i) => {
+        //     moviesElem.append(movieText(mov, "movie-" + (i + 1)));
+        //   });
+        // }
+        recommendationElem.innerHTML = "";
+        let container2 = document.createElement("tr");
+        let row2 = document.createElement("th");
+        row2.innerHTML = "Recommendations";
+        recommendationElem.append(row2);
+
+        recommendations.forEach((recommendation, i) => {
+          let new_recommendation = movieText(
+            recommendation,
+            "recommendation-" + (i + 1),
+            i + 1
+          );
+          new_recommendation.onmouseenter = recommendationHover.bind(
+            null,
+            i + 1
+          );
+          new_recommendation.onmouseleave = exitHover;
+          recommendationElem.append(new_recommendation);
+        });
+
+        tropesElem.innerHTML = "";
+        let container3 = document.createElement("tr");
+        let row3 = document.createElement("th");
+        let rowWeight = document.createElement("th");
+        row3.innerHTML = "Tropes";
+        rowWeight.innerHTML = "Weightage";
+        tropesElem.append(row3);
+        // tropesElem.append(rowWeight);
+
+        tropes.forEach((trope, i) => {
+          let new_trope = tropeItem(trope, "trope-" + (i + 1), i);
+          new_trope.onmouseenter = tropesHover.bind(null, i + 1);
+          new_trope.onmouseout = exitHover;
+          tropesElem.append(new_trope);
+        });
+
+        drawlines("movie", "trope", movie_trope_links);
+        drawlines("trope", "recommendation", trope_recommendation_links);
+      }
+
+      function getListOfMovies() {
+        var xmlHttp = new XMLHttpRequest();
+        xmlHttp.open("GET", "/GetMoviesTMDB", false); // false for synchronous request
+        // xmlHttp.withCredentials = "false";
+        xmlHttp.send(null);
+        return JSON.parse(xmlHttp.responseText);
+      }
+
+      function getListOfTropes() {}
+
+      function getRecommendations(movies, tropes) {
+        var xmlHttp = new XMLHttpRequest();
+        let movieParam = movies.map(movie => movie.MovieId).join(",");
+        let tropeParam = tropes.map(trope => trope.strength / 100).join(",");
+        xmlHttp.open(
+          "GET",
+          "/GetSimilarMovies?MovieList=" +
+            movieParam +
+            (tropeParam ? "&weights=" + tropeParam : ""),
+          false
+        ); // false for synchronous request
+        // xmlHttp.withCredentials = "false";
+        xmlHttp.send(null);
+        response = JSON.parse(xmlHttp.responseText);
+        console.log(response);
+        //
+        let recommendations = Object.entries(response.similarMovies).map(
+          Entry => {
+            return getMovie("" + Entry[0]);
+          }
+        );
+        let tropes2 = Object.entries(response.tropeWeights).map(trope => {
+          let trope2 = {};
+          trope2["Title"] = trope[1].trope;
+          trope2["strength"] = +trope[1].weight * 100;
+          trope2.description = "NA";
+          return trope2;
+        });
+        let movie_trope_links = Object.entries(response.requestedMovies).map(
+          (movie, i) => {
+            let movieIndex = i + 1;
+            let tropes = eval(movie[1].tropes);
+            let links = [];
+            for (let index = 0; index < tropes.length; index++) {
+              if (tropes[index] == 1) {
+                links.push({
+                  Source: movieIndex,
+                  Destination: index + 1,
+                  Strength: 10
+                });
+              }
+            }
+            return links;
+          }
+        );
+        let trope_recommendation_links = Object.entries(
+          response.similarMovies
+        ).map((movie, i) => {
+          let movieIndex = i + 1;
+          let tropes = eval(movie[1].tropes);
+          let links = [];
+          for (let index = 0; index < tropes.length; index++) {
+            if (tropes[index] == 1) {
+              links.push({
+                Source: movieIndex,
+                Destination: index + 1,
+                Strength: 10
+              });
+            }
+          }
+          return links;
+        });
+        movie_trope_links = movie_trope_links.reduce(
+          (acc, val) => acc.concat(val),
+          []
+        );
+        trope_recommendation_links = trope_recommendation_links.reduce(
+          (acc, val) => acc.concat(val),
+          []
+        );
+
+        console.log(movie_trope_links);
+        console.log(trope_recommendation_links);
+        return [
+          recommendations,
+          tropes2,
+          movie_trope_links,
+          trope_recommendation_links
+        ];
+      }
+
+      async function updateRecommendations() {
+	    var x= document.getElementById("idOverlay");
+
+		x.style.display="block";
+		try{
+        let resp = getRecommendations(movies, tropes);
+        recommendations = resp[0];
+        tropes = resp[1];
+        movie_trope_links = resp[2];
+        trope_recommendation_links = resp[3];
+        updateLoop(
+          movies,
+          tropes,
+          recommendations,
+          movie_trope_links,
+          trope_recommendation_links
+        );
+		}
+		catch(err)
+		{
+		console.log(err);
+		}
+		
+		
+				//alert(x);
+		x.style.display="none";
+      }
+
+      function tableElement(id) {
+        let container = document.createElement("tr");
+        let row = document.createElement("td");
+        row.id = id;
+        container.append(row);
+        return container;
+      }
+
+      function movieHover(index, event) {
+        // event.stopPropagation();
+        clearLines();
+        let tempLinks = movie_trope_links.filter(link => link.Source == index);
+        drawlines("movie", "trope", tempLinks);
+        drawlines("trope", "recommendation", trope_recommendation_links);
+        // updateLoop(
+        //   movies,
+        //   tropes,
+        //   recommendations,
+        //   tempLinks,
+        //   trope_recommendation_links
+        // );
+      }
+
+      function recommendationHover(index, event) {
+        // event.stopPropagation();
+        clearLines();
+        let tempLinks = trope_recommendation_links.filter(
+          link => link.Destination == index
+        );
+        drawlines("movie", "trope", movie_trope_links);
+        drawlines("trope", "recommendation", tempLinks);
+        // updateLoop(
+        //   movies,
+        //   tropes,
+        //   recommendations,
+        //   movie_trope_links,
+        //   tempLinks
+        // );
+      }
+
+      function tropesHover(index, event) {
+        // event.stopPropagation();
+        clearLines();
+        let movie_trope_links_temp = movie_trope_links.filter(
+          link => link.Destination == index
+        );
+        let trope_recommendation_links_temp = trope_recommendation_links.filter(
+          link => link.Source == index
+        );
+        drawlines("movie", "trope", movie_trope_links_temp);
+        drawlines("trope", "recommendation", trope_recommendation_links_temp);
+
+        // updateLoop(
+        //   movies,
+        //   tropes,
+        //   recommendations,
+        //   movie_trope_links_temp,
+        //   trope_recommendation_links_temp
+        // );
+      }
+
+      function exitHover() {
+        console.log("called");
+        clearLines();
+        drawlines("movie", "trope", movie_trope_links);
+        drawlines("trope", "recommendation", trope_recommendation_links);
+
+        // updateLoop(
+        //   movies,
+        //   tropes,
+        //   recommendations,
+        //   movie_trope_links,
+        //   trope_recommendation_links
+        // );
+      }
+
+      function movieText(text, id, index) {
+        let row = tableElement(id);
+        row.querySelector("td").innerHTML = text.Title;
+        row.setAttribute("indexVal", +index);
+        row.onmouseenter = function() {
+          document.getElementById("information").innerHTML = text.overview;
+        };
+        row.onmouseleave = function() {
+          document.getElementById("information").innerHTML = "";
+        };
+
+        return row;
+      }
+
+      function tropeItem(trope, id, index) {
+        let item = movieText(trope, id, index + 1);
+        let slider = document.createElement("Input");
+        slider.type = "range";
+        slider.min = "1";
+        slider.max = "100";
+        slider.value = trope.strength;
+        slider.className = "slider";
+        slider.id = id + "-strength";
+        slider.onchange = function(event) {
+          tropes[index].strength = +event.target.value;
+        };
+        let checkbox = document.createElement("Input");
+        let slidertd = document.createElement("td");
+        checkbox.type = "checkbox";
+        checkbox.checked = true;
+        slidertd.append(slider);
+        item.querySelector("td").append(slider);
+        // item.querySelector("td").append(checkbox);
+        return item;
+      }
+
+      function sliderUpdate(event) {
+        console.log(event.target.value);
+      }
+
+      updateLoop(
+        movies,
+        tropes,
+        recommendations,
+        movie_trope_links,
+        trope_recommendation_links
+      );
+  document.getElementById("generate").onclick = updateRecommendations;
+      
+
+    </script>
+  </body>
+</html>
